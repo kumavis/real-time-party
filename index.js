@@ -1,8 +1,10 @@
 var EventEmitter = require('events').EventEmitter
 var ScuttleBucket = require('scuttlebucket')
 var Model = require('scuttlebutt/model')
+var SetGetWrapper = require('set-get-wrapper')
 var RtcUtil = require('./rtc_utils')
 var Uuid = require('hat')
+var StreamBench = require('stream-bench')
 
 DEBUG_MODE = true
 
@@ -12,7 +14,13 @@ initialize()
 function initialize(){
   // create multiverse
   var core = createMultiverse()
+  var wrapper = SetGetWrapper(core,['color','text'])
   animate(core)
+
+  // deberg
+  window.multiverse = multiverse
+  window.core = core
+  window.wrapper = wrapper
 
   // set/get hash location
   var roomId = window.location.hash.slice(1)
@@ -24,7 +32,7 @@ function initialize(){
   } else {
     roomId = Uuid()
     if (!DEBUG_MODE) window.location.hash = roomId
-    if (DEBUG_MODE) roomId = 'kumavis_debug'
+    if (DEBUG_MODE) roomId = 'krul_debug'
     startHost(roomId)
   }
 
@@ -41,9 +49,6 @@ function createMultiverse(){
     var value = keyValue[1]
     core.updates.emit(key,value)
   })
-  // deberg
-  window.multiverse = multiverse
-  window.core = core
   return core
 }
 
@@ -64,7 +69,9 @@ function startGuest(roomId){
 function connectionEstablished(duplexStream){
   console.log('connectionEstablished',duplexStream)
   var multiverseStream = multiverse.createStream()
-  duplexStream.pipe(multiverseStream).pipe(duplexStream)
+  var inBenchmark = Benchmark('in')
+  var outBenchmark = Benchmark('out')
+  duplexStream.pipe(inBenchmark).pipe(multiverseStream).pipe(outBenchmark).pipe(duplexStream)
 }
 function connectionLost(duplexStream){
   console.log('connectionLost',duplexStream)
@@ -78,4 +85,21 @@ function animate(actor){
 
 window.color = function color(value){
   core.set('color',value)
+}
+window.text = function text(value){
+  core.set('text',value)
+}
+
+function Benchmark(namespace){
+  var bench = StreamBench({
+    interval: 100,
+    metric:   'kbytes'
+  })
+  bench.on('rate', function (rate) {
+    console.log(namespace,'rate:',rate)
+  })
+  bench.once('report', function (report) {
+    console.log('namespace report:',report)
+  })
+  return bench
 }
